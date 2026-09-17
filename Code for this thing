@@ -1,0 +1,269 @@
+import csv
+import os
+import sqlite3
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+
+DB_NAME = os.path.join(os.path.dirname(__file__), "Guitar_sickshred.db")
+
+
+def init_db():
+    with sqlite3.connect(DB_NAME) as conn:
+        cursor = conn.cursor()
+        table_exists = cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='Product'"
+        ).fetchone()
+
+        if table_exists:
+            columns = [row[1] for row in cursor.execute("PRAGMA table_info(Product)")]
+            if "Manufacturer" not in columns or "Title" not in columns:
+                cursor.execute("ALTER TABLE Product RENAME TO Product_old")
+                cursor.execute(
+                    """
+                    CREATE TABLE Product (
+                        ProductID INTEGER PRIMARY KEY,
+                        Manufacturer TEXT,
+                        Title TEXT,
+                        Price REAL
+                    )
+                    """
+                )
+
+                if "Name" in columns and "Price" in columns:
+                    cursor.execute(
+                        "INSERT INTO Product (Manufacturer, Title, Price) SELECT '', Name, Price FROM Product_old"
+                    )
+                elif "ProductID" in columns and "Price" in columns:
+                    cursor.execute(
+                        "INSERT INTO Product (ProductID, Manufacturer, Title, Price) SELECT ProductID, '', '', Price FROM Product_old"
+                    )
+                cursor.execute("DROP TABLE Product_old")
+        else:
+            cursor.execute(
+                """
+                CREATE TABLE Product (
+                    ProductID INTEGER PRIMARY KEY,
+                    Manufacturer TEXT,
+                    Title TEXT,
+                    Price REAL
+                )
+                """
+            )
+        conn.commit()
+
+
+def add_product(manufacturer, title, price):
+    manufacturer = (manufacturer or "").strip()
+    title = (title or "").strip()
+
+    if not manufacturer:
+        raise ValueError("Manufacturer cannot be empty.")
+    if not title:
+        raise ValueError("Title cannot be empty.")
+
+    try:
+        price_value = float(price)
+    except ValueError as exc:
+        raise ValueError("Price must be a number.") from exc
+
+    with sqlite3.connect(DB_NAME) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO Product (Manufacturer, Title, Price) VALUES (?, ?, ?)",
+            (manufacturer, title, price_value),
+        )
+        conn.commit()
+
+
+def import_csv_to_db(file_path):
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"CSV file not found: {file_path}")
+
+    init_db()
+
+    with open(file_path, newline="", encoding="cp1252", errors="replace") as csvfile:
+        reader = csv.DictReader(csvfile)
+        if not reader.fieldnames:
+            raise ValueError("CSV file is empty or missing headers.")
+
+        normalized = {str(col).strip().lower(): col for col in reader.fieldnames}
+
+        manufacturer_field = normalized.get("manufacturer")
+        title_field = normalized.get("title")
+        price_field = normalized.get("price")
+
+        if manufacturer_field is None:
+            manufacturer_field = normalized.get("brand") or normalized.get("manufacturer name")
+        if title_field is None:
+            title_field = normalized.get("model") or normalized.get("product") or normalized.get("name")
+        if price_field is None:
+            price_field = normalized.get("selling price") or normalized.get("unit price") or normalized.get("cost")
+
+        if manufacturer_field is None or title_field is None or price_field is None:
+            raise ValueError("CSV must include Manufacturer, Title, and Price columns.")
+
+        with sqlite3.connect(DB_NAME) as conn:
+            for row in reader:
+                manufacturer = (row.get(manufacturer_field) or "").strip()
+                title = (row.get(title_field) or "").strip()
+                price_value = (row.get(price_field) or "").strip()
+
+                if not manufacturer or not title:
+                    continue
+
+                try:
+                    price = float(str(price_value).replace(",", "").replace("$", ""))
+                except ValueError:
+                    continue
+
+                conn.execute(
+                    "INSERT INTO Product (Manufacturer, Title, Price) VALUES (?, ?, ?)",
+                    (manufacturer, title, price),
+                )
+            conn.commit()
+
+
+def get_all_products():
+    with sqlite3.connect(DB_NAME) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT ProductID, Manufacturer, Title, Price FROM Product ORDER BY Manufacturer, Title")
+        return cursor.fetchall()
+
+
+class ProductApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Guitar Store Products")
+        self.root.geometry("600x450")
+        self.root.minsize(500, 350)
+        button_frame = tk.Frame(root)
+        button_frame.pack(side="bottom", pady=10)
+       
+        tk.Button(button_frame, text="DELETE ALL", bg="Red", command=self.delete_all_products, width=10).grid(row=0, column=3, padx=0)
+
+        title = tk.Label(root, text="Guitar Store Inventory", font=("Arial", 16, "bold"))
+        title.pack(pady=10)
+
+        form = tk.Frame(root)
+        form.pack(pady=5)
+
+        tk.Label(form, text="Manufacturer:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.manufacturer_entry = tk.Entry(form, width=30)
+        self.manufacturer_entry.grid(row=0, column=1, padx=5, pady=5)
+
+        tk.Label(form, text="Title:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.title_entry = tk.Entry(form, width=30)
+        self.title_entry.grid(row=1, column=1, padx=5, pady=5)
+
+        tk.Label(form, text="Price:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        self.price_entry = tk.Entry(form, width=30)
+        self.price_entry.grid(row=2, column=1, padx=5, pady=5)
+
+        tk.Label(form, text="Delete Product ID:").grid(row=3, column=0, padx=5, pady=5, sticky="w")
+        self.delete_id_entry = tk.Entry(form, width=10)
+        self.delete_id_entry.grid(row=3, column=1, padx=5, pady=5, sticky="w")
+
+        sort_options = ["Manufacturer", "Title", "Price"]
+        sort_by = ttk.Combobox(form, values=sort_options, state="readonly", width=20)
+        sort_by.grid(row=3, column=2, padx=5, pady=5, sticky="w")
+
+        button_frame = tk.Frame(root)
+        button_frame.pack(pady=10)
+
+        tk.Button(button_frame, text="Add Product", fg="Green", command=self.add_product_clicked, width=10).grid(row=0, column=0, padx=0)
+        tk.Button(button_frame, text="Delete Product", fg="Red", command=self.delete_product, width=10).grid(row=0, column=1, padx=0)
+        tk.Button(button_frame, text="Refresh List", command=self.refresh_list, width=10).grid(row=0, column=2, padx=0)
+        tk.Button(button_frame, text="Import CSV", command=self.import_csv_clicked, width=10).grid(row=0, column=4, padx=0)
+        tk.Button(button_frame, text="Information", fg="Blue", command=self.info, width=10).grid(row=0, column=5, padx=0)
+
+        self.output = tk.Text(root, height=15, width=75)
+        self.output.pack(padx=10, pady=10)
+
+        self.refresh_list()
+
+    def info(self):
+        init_db()
+        self.refresh_list()
+        messagebox.showinfo("Database", "This database is used to store information about SOME products on Thomannmusic.com. Because this company is european, All prices are shown in Euros. You can add, delete, and view products, as well as import product data from a CSV file. Imported cvs files must follow the format manufacturer, title, price. The database is stored in the file Guitar_sickshred.db. (NOTE) - All DEAN products included are the american made version, and not apart of Thommanmusic.com, this is because they where inserted in a separate csv file, created for testing importing cvs files. The database is not affiliated with Thomannmusic.com, and is for educational purposes only.")
+
+    def import_csv_clicked(self):
+        file_path = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
+        if not file_path:
+            return
+
+        try:
+            import_csv_to_db(file_path)
+            self.refresh_list()
+            messagebox.showinfo("Success", f"CSV imported successfully from {os.path.basename(file_path)}.")
+        except Exception as exc:
+            messagebox.showerror("Import Error", str(exc))
+
+    def delete_product(self):
+        product_id = self.delete_id_entry.get()
+
+        if not product_id.strip():
+            messagebox.showerror("Input Error", "Please enter a Product ID to delete.")
+            return
+
+        try:
+            product_id_value = int(product_id)
+        except ValueError:
+            messagebox.showerror("Input Error", "Product ID must be an integer.")
+            return
+
+        with sqlite3.connect(DB_NAME) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM Product WHERE ProductID = ?", (product_id_value,))
+            conn.commit()
+
+        self.delete_id_entry.delete(0, tk.END)
+        self.refresh_list()
+        messagebox.showinfo("Success", f"Product with ID {product_id_value} deleted successfully.")
+
+
+    def add_product_clicked(self):
+        manufacturer = self.manufacturer_entry.get()
+        title = self.title_entry.get()
+        price = self.price_entry.get()
+
+        try:
+            add_product(manufacturer, title, price)
+            self.manufacturer_entry.delete(0, tk.END)
+            self.title_entry.delete(0, tk.END)
+            self.price_entry.delete(0, tk.END)
+            self.refresh_list()
+            messagebox.showinfo("Success", "Product added successfully.")
+        except ValueError as exc:
+            messagebox.showerror("Input Error", str(exc))
+
+    def refresh_list(self):
+        self.output.delete("1.0", tk.END)
+        rows = get_all_products()
+
+        if not rows:
+            self.output.insert(tk.END, "No products yet. Add one to get started.")
+            return
+
+        self.output.insert(tk.END, "ProductID   Manufacturer         Title                          Price\n")
+        self.output.insert(tk.END, "---------------------------------------------------------------------\n")
+        for product_id, manufacturer, title, price in rows:
+            self.output.insert(tk.END, f"{product_id:<10} {manufacturer:<20} {title:<28} {price:>7.2f}\n")
+
+    def delete_all_products(self):
+        if messagebox.askyesno("Confirm Delete All", "Are you sure you want to delete all products?"):
+            with sqlite3.connect(DB_NAME) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM Product")
+                conn.commit()
+            self.refresh_list()
+            messagebox.showinfo("Success", "All products deleted successfully.")
+
+def main():
+    init_db()
+    root = tk.Tk()
+    app = ProductApp(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
