@@ -6,6 +6,7 @@ from tkinter import filedialog, messagebox, ttk
 
 DB_NAME = os.path.join(os.path.dirname(__file__), "Guitar_sickshred.db")
 
+convert = False
 
 def init_db():
     with sqlite3.connect(DB_NAME) as conn:
@@ -350,7 +351,7 @@ class ProductApp:
         dialog = tk.Toplevel(self.root)
         dialog.title("Settings")
         dialog.geometry("300x120")
-        dialog.grab_set()  # Make window modal
+        dialog.grab_set()
 
         label = tk.Label(dialog, text="Settings", pady=10)
         label.pack()
@@ -358,21 +359,46 @@ class ProductApp:
         custom_btn = tk.Button(dialog, text="Convert Euros to CAD", command=self.convert_euros_to_cad)
         custom_btn.pack(pady=5)
 
-def convert_euros_to_cad(self):
-        with sqlite3.connect(DB_NAME) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT ProductID, Price FROM Product")
-            products = cursor.fetchall()
 
-            for product_id, price in products:
-                if price is not None:
-                    cad_price = price * 1.5  # Example conversion rate
-                    cursor.execute("UPDATE Product SET Price = ? WHERE ProductID = ?", (cad_price, product_id))
 
-            conn.commit()
+    # Nick help me here
 
-        self.refresh_list()
-        messagebox.showinfo("Success", "All prices converted from Euros to CAD.")
+    def convert_euros_to_cad(self):
+        global convert
+        if convert == False:
+            with sqlite3.connect(DB_NAME) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT ProductID, Price FROM Product")
+                products = cursor.fetchall()
+
+                for product_id, price in products:
+                    if price is not None:
+                        cad_price = price * 1.61
+                        cursor.execute("UPDATE Product SET Price = ? WHERE ProductID = ?", (cad_price, product_id))
+
+                conn.commit()
+
+            self.refresh_list()
+            messagebox.showinfo("Success", "All prices converted from Euros to CAD.")
+            convert = True
+        else:
+            with sqlite3.connect(DB_NAME) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT ProductID, Price FROM Product")
+                products = cursor.fetchall()
+
+                for product_id, price in products:
+                    if price is not None:
+                        cad_price = price / 1.5  # Example conversion rate
+                        cursor.execute("UPDATE Product SET Price = ? WHERE ProductID = ?", (cad_price, product_id))
+
+                conn.commit()
+
+            self.refresh_list()
+            messagebox.showinfo("Success", "All prices converted from CAD to Euros.")
+            convert = False
+
+
 
 
 def main():
