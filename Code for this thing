@@ -130,6 +130,27 @@ def get_all_products():
         return cursor.fetchall()
 
 
+def delete_product_by_title(title):
+    title = (title or "").strip()
+
+    if not title:
+        raise ValueError("Title cannot be empty.")
+
+    with sqlite3.connect(DB_NAME) as conn:
+        cursor = conn.cursor()
+        matches = cursor.execute(
+            "SELECT ProductID, Manufacturer, Title FROM Product WHERE LOWER(Title) = LOWER(?) ORDER BY Manufacturer, Title",
+            (title,),
+        ).fetchall()
+
+        if not matches:
+            return 0
+
+        cursor.execute("DELETE FROM Product WHERE LOWER(Title) = LOWER(?)", (title,))
+        conn.commit()
+        return len(matches)
+
+
 class ProductApp:
     def __init__(self, root):
         self.root = root
@@ -140,12 +161,15 @@ class ProductApp:
         button_frame.pack(side="bottom", pady=10)
        
         tk.Button(button_frame, text="DELETE ALL", bg="Red", command=self.delete_all_products, width=10).grid(row=0, column=3, padx=0)
-
+        tk.Button(button_frame, text="Settings", command=self.settings, width=10).grid(row=0, column=4, padx=0)
         title = tk.Label(root, text="Guitar Store Inventory", font=("Arial", 16, "bold"))
         title.pack(pady=10)
 
         form = tk.Frame(root)
         form.pack(pady=5)
+
+        titlesort_label = tk.Label(form, text="Sort by:")
+        titlesort_label.grid(row=3, column=2, padx=5, pady=1, sticky="w")
 
         tk.Label(form, text="Manufacturer:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.manufacturer_entry = tk.Entry(form, width=30)
@@ -163,28 +187,68 @@ class ProductApp:
         self.delete_id_entry = tk.Entry(form, width=10)
         self.delete_id_entry.grid(row=3, column=1, padx=5, pady=5, sticky="w")
 
+        tk.Label(form, text="Delete Title:").grid(row=4, column=0, padx=5, pady=5, sticky="w")
+        self.delete_title_entry = tk.Entry(form, width=20)
+        self.delete_title_entry.grid(row=4, column=1, padx=5, pady=5, sticky="w")
+
         sort_options = ["Manufacturer", "Title", "Price"]
-        sort_by = ttk.Combobox(form, values=sort_options, state="readonly", width=20)
-        sort_by.grid(row=3, column=2, padx=5, pady=5, sticky="w")
+        self.sort_combobox = ttk.Combobox(
+            form, values=sort_options, state="readonly", width=20
+        )
+        self.sort_combobox.grid(row=4, column=2, padx=5, pady=5, sticky="w")
+        self.sort_combobox.set("Manufacturer")
+        self.sort_combobox.bind("<<ComboboxSelected>>", lambda event: self.sort_products())
 
         button_frame = tk.Frame(root)
         button_frame.pack(pady=10)
 
-        tk.Button(button_frame, text="Add Product", fg="Green", command=self.add_product_clicked, width=10).grid(row=0, column=0, padx=0)
-        tk.Button(button_frame, text="Delete Product", fg="Red", command=self.delete_product, width=10).grid(row=0, column=1, padx=0)
-        tk.Button(button_frame, text="Refresh List", command=self.refresh_list, width=10).grid(row=0, column=2, padx=0)
-        tk.Button(button_frame, text="Import CSV", command=self.import_csv_clicked, width=10).grid(row=0, column=4, padx=0)
-        tk.Button(button_frame, text="Information", fg="Blue", command=self.info, width=10).grid(row=0, column=5, padx=0)
+        tk.Button(button_frame, text="Add Product", fg="Green", command=self.add_product_clicked, width=12).grid(row=0, column=0, padx=2)
+        tk.Button(button_frame, text="Delete by ID", fg="Red", command=self.delete_product, width=12).grid(row=0, column=1, padx=2)
+        tk.Button(button_frame, text="Delete by Title", fg="Red", command=self.delete_product_by_title_clicked, width=12).grid(row=0, column=2, padx=2)
+        tk.Button(button_frame, text="Refresh List", command=self.refresh_list, width=12).grid(row=0, column=3, padx=2)
+        tk.Button(button_frame, text="Import CSV", command=self.import_csv_clicked, width=12).grid(row=0, column=4, padx=2)
+        tk.Button(button_frame, text="Information", fg="Blue", command=self.info, width=12).grid(row=0, column=5, padx=2)
+        tk.Button(button_frame, text="Exit", command=quit, width=12).grid(row=0, column=6, padx=2)
 
         self.output = tk.Text(root, height=15, width=75)
         self.output.pack(padx=10, pady=10)
 
         self.refresh_list()
 
+    def sort_products(self):
+        sort_by = self.sort_combobox.get()
+        if sort_by == "Manufacturer":
+            rows = get_all_products()
+            rows.sort(key=lambda x: x[1].lower())
+        elif sort_by == "Title":
+            rows = get_all_products()
+            rows.sort(key=lambda x: x[2].lower())
+        elif sort_by == "Price":
+            rows = get_all_products()
+            rows.sort(key=lambda x: x[3])
+        else:
+            rows = get_all_products()
+
+        self.output.delete("1.0", tk.END)
+        if not rows:
+            self.output.insert(tk.END, "No products yet. Add one to get started.")
+            return
+
+        self.output.insert(tk.END, "ProductID   Manufacturer         Title                          Price\n")
+        self.output.insert(tk.END, "---------------------------------------------------------------------\n")
+        for product_id, manufacturer, title, price in rows:
+            self.output.insert(tk.END, f"{product_id:<10} {manufacturer:<20} {title:<28} {price:>7.2f}\n")
+
+    
     def info(self):
         init_db()
         self.refresh_list()
         messagebox.showinfo("Database", "This database is used to store information about SOME products on Thomannmusic.com. Because this company is european, All prices are shown in Euros. You can add, delete, and view products, as well as import product data from a CSV file. Imported cvs files must follow the format manufacturer, title, price. The database is stored in the file Guitar_sickshred.db. (NOTE) - All DEAN products included are the american made version, and not apart of Thommanmusic.com, this is because they where inserted in a separate csv file, created for testing importing cvs files. The database is not affiliated with Thomannmusic.com, and is for educational purposes only.")
+
+
+    def quit(self):
+        self.root.destroy()
+
 
     def import_csv_clicked(self):
         file_path = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
@@ -220,6 +284,27 @@ class ProductApp:
         self.refresh_list()
         messagebox.showinfo("Success", f"Product with ID {product_id_value} deleted successfully.")
 
+    def delete_product_by_title_clicked(self):
+        title = self.delete_title_entry.get()
+
+        if not title.strip():
+            messagebox.showerror("Input Error", "Please enter a title to delete.")
+            return
+
+        try:
+            deleted_count = delete_product_by_title(title)
+        except ValueError as exc:
+            messagebox.showerror("Input Error", str(exc))
+            return
+
+        self.delete_title_entry.delete(0, tk.END)
+        self.refresh_list()
+
+        if deleted_count == 0:
+            messagebox.showinfo("No Match", f"No product found with title '{title.strip()}'.")
+            return
+
+        messagebox.showinfo("Success", f"{deleted_count} product(s) with title '{title.strip()}' deleted successfully.")
 
     def add_product_clicked(self):
         manufacturer = self.manufacturer_entry.get()
@@ -257,6 +342,38 @@ class ProductApp:
                 conn.commit()
             self.refresh_list()
             messagebox.showinfo("Success", "All products deleted successfully.")
+
+    def settings(self):
+        init_db()
+        self.refresh_list()
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Settings")
+        dialog.geometry("300x120")
+        dialog.grab_set()  # Make window modal
+
+        label = tk.Label(dialog, text="Settings", pady=10)
+        label.pack()
+
+        custom_btn = tk.Button(dialog, text="Convert Euros to CAD", command=self.convert_euros_to_cad)
+        custom_btn.pack(pady=5)
+
+def convert_euros_to_cad(self):
+        with sqlite3.connect(DB_NAME) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT ProductID, Price FROM Product")
+            products = cursor.fetchall()
+
+            for product_id, price in products:
+                if price is not None:
+                    cad_price = price * 1.5  # Example conversion rate
+                    cursor.execute("UPDATE Product SET Price = ? WHERE ProductID = ?", (cad_price, product_id))
+
+            conn.commit()
+
+        self.refresh_list()
+        messagebox.showinfo("Success", "All prices converted from Euros to CAD.")
+
 
 def main():
     init_db()
