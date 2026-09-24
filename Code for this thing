@@ -1,12 +1,15 @@
 import csv
+from logging import root
 import os
 import sqlite3
+import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 DB_NAME = os.path.join(os.path.dirname(__file__), "Guitar_sickshred.db")
 
 convert = False
+set_default_currency_to_cad = False
 
 def init_db():
     with sqlite3.connect(DB_NAME) as conn:
@@ -155,6 +158,7 @@ def delete_product_by_title(title):
 class ProductApp:
     def __init__(self, root):
         self.root = root
+        self.root.protocol("WM_DELETE_WINDOW", self.quit)
         self.root.title("Guitar Store Products")
         self.root.geometry("600x450")
         self.root.minsize(500, 350)
@@ -209,7 +213,7 @@ class ProductApp:
         tk.Button(button_frame, text="Refresh List", command=self.refresh_list, width=12).grid(row=0, column=3, padx=2)
         tk.Button(button_frame, text="Import CSV", command=self.import_csv_clicked, width=12).grid(row=0, column=4, padx=2)
         tk.Button(button_frame, text="Information", fg="Blue", command=self.info, width=12).grid(row=0, column=5, padx=2)
-        tk.Button(button_frame, text="Exit", command=quit, width=12).grid(row=0, column=6, padx=2)
+        tk.Button(button_frame, text="Exit", command=self.quit, width=12).grid(row=0, column=6, padx=2)
 
         self.output = tk.Text(root, height=15, width=75)
         self.output.pack(padx=10, pady=10)
@@ -248,7 +252,15 @@ class ProductApp:
 
 
     def quit(self):
-        self.root.destroy()
+        if set_default_currency_to_cad:
+            global convert
+            if convert:
+                with sqlite3.connect(DB_NAME) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE Product SET Price = Price / 1.61 WHERE Price IS NOT NULL")
+                    conn.commit()
+                convert = False
+            self.root.destroy()
 
 
     def import_csv_clicked(self):
@@ -350,18 +362,23 @@ class ProductApp:
 
         dialog = tk.Toplevel(self.root)
         dialog.title("Settings")
-        dialog.geometry("300x120")
+        dialog.geometry("320x220")
         dialog.grab_set()
 
         label = tk.Label(dialog, text="Settings", pady=10)
         label.pack()
 
-        custom_btn = tk.Button(dialog, text="Convert Euros to CAD", command=self.convert_euros_to_cad)
-        custom_btn.pack(pady=5)
+        convert_btn = tk.Button(dialog, text="Convert Euros to CAD", command=self.convert_euros_to_cad)
+        convert_btn.pack(pady=5)
+
+        default_eurosbtn = tk.Button(dialog, text="Set default currency to Euros", command=self.set_default_currency)
+        default_eurosbtn.pack(pady=6, padx=10)
+
+        default_cadbtn = tk.Button(dialog, text="Set default currency to CAD", command=self.set_default_currency_to_cad)
+        default_cadbtn.pack(pady=7, padx=10)
 
 
-
-    # Nick help me here
+    # Nick helps me here
 
     def convert_euros_to_cad(self):
         global convert
@@ -389,7 +406,7 @@ class ProductApp:
 
                 for product_id, price in products:
                     if price is not None:
-                        cad_price = price / 1.5  # Example conversion rate
+                        cad_price = price / 1.61  # Example conversion rate
                         cursor.execute("UPDATE Product SET Price = ? WHERE ProductID = ?", (cad_price, product_id))
 
                 conn.commit()
@@ -398,8 +415,48 @@ class ProductApp:
             messagebox.showinfo("Success", "All prices converted from CAD to Euros.")
             convert = False
 
+    def set_default_currency(self):
+        global convert
+        if convert:
+            with sqlite3.connect(DB_NAME) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT ProductID, Price FROM Product")
+                products = cursor.fetchall()
 
+                for product_id, price in products:
+                    if price is not None:
+                        euro_price = price / 1.61  # Example conversion rate
+                        cursor.execute("UPDATE Product SET Price = ? WHERE ProductID = ?", (euro_price, product_id))
 
+                conn.commit()
+
+            self.refresh_list()
+            messagebox.showinfo("Success", "Default currency set to Euros.")
+            convert = False
+        else:
+            messagebox.showinfo("Info", "Default currency is already set to Euros.")
+
+    def set_default_currency_to_cad(self):
+        global convert
+        if not convert:
+            with sqlite3.connect(DB_NAME) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT ProductID, Price FROM Product")
+                products = cursor.fetchall()
+
+                for product_id, price in products:
+                    if price is not None:
+                        cad_price = price * 1.61  # Example conversion rate
+                        cursor.execute("UPDATE Product SET Price = ? WHERE ProductID = ?", (cad_price, product_id))
+
+                conn.commit()
+
+            self.refresh_list()
+            set_default_currency_to_cad = True
+            messagebox.showinfo("Success", "Default currency set to CAD.")
+            convert = True
+        else:
+            messagebox.showinfo("Info", "Default currency is already set to CAD.")
 
 def main():
     init_db()
