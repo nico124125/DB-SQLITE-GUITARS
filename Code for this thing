@@ -7,7 +7,6 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 DB_NAME = os.path.join(os.path.dirname(__file__), "Guitar_sickshred.db")
-
 convert = False
 set_default_currency_to_cad = False
 
@@ -248,19 +247,17 @@ class ProductApp:
     def info(self):
         init_db()
         self.refresh_list()
-        messagebox.showinfo("Database", "This database is used to store information about SOME products on Thomannmusic.com. Because this company is european, All prices are shown in Euros. You can add, delete, and view products, as well as import product data from a CSV file. Imported cvs files must follow the format manufacturer, title, price. The database is stored in the file Guitar_sickshred.db. (NOTE) - All DEAN products included are the american made version, and not apart of Thommanmusic.com, this is because they where inserted in a separate csv file, created for testing importing cvs files. The database is not affiliated with Thomannmusic.com, and is for educational purposes only.")
+        messagebox.showinfo("Database", "This database is used to store information about SOME products on Thomannmusic.com. Because this company is european, All prices are shown in Euros. You can set the default currency to CAD if needed. You can add, delete, and view products, as well as import product data from a CSV file. Imported cvs files must follow the format manufacturer, title, price. The database is stored in the file Guitar_sickshred.db. (NOTE) - All DEAN products included are the american made version, and not apart of Thommanmusic.com, this is because they where inserted in a separate csv file, created for testing importing cvs files. The database is not affiliated with Thomannmusic.com, and is for educational purposes only.")
 
 
     def quit(self):
-        if set_default_currency_to_cad:
-            global convert
-            if convert:
-                with sqlite3.connect(DB_NAME) as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("UPDATE Product SET Price = Price / 1.61 WHERE Price IS NOT NULL")
-                    conn.commit()
-                convert = False
-            self.root.destroy()
+        if convert and not set_default_currency_to_cad:
+            with sqlite3.connect(DB_NAME) as conn:
+                conn.execute(
+                    "UPDATE Product SET Price = Price / 1.61 WHERE Price IS NOT NULL"
+                )
+                conn.commit()
+        self.root.destroy()
 
 
     def import_csv_clicked(self):
@@ -416,7 +413,7 @@ class ProductApp:
             convert = False
 
     def set_default_currency(self):
-        global convert
+        global convert, set_default_currency_to_cad
         if convert:
             with sqlite3.connect(DB_NAME) as conn:
                 cursor = conn.cursor()
@@ -435,9 +432,10 @@ class ProductApp:
             convert = False
         else:
             messagebox.showinfo("Info", "Default currency is already set to Euros.")
+        set_default_currency_to_cad = False
 
     def set_default_currency_to_cad(self):
-        global convert
+        global convert, set_default_currency_to_cad
         if not convert:
             with sqlite3.connect(DB_NAME) as conn:
                 cursor = conn.cursor()
