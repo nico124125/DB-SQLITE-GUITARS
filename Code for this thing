@@ -375,8 +375,6 @@ class ProductApp:
         default_cadbtn.pack(pady=7, padx=10)
 
 
-    # Nick helps me here
-
     def convert_euros_to_cad(self):
         global convert
         if convert == False:
@@ -455,6 +453,7 @@ class ProductApp:
             convert = True
         else:
             messagebox.showinfo("Info", "Default currency is already set to CAD.")
+
 
 def main():
     init_db()
